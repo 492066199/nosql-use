@@ -3,4 +3,4 @@
 * then synchronous the value to all the memcached in the cluster
 * this is a light tools and no memory leak 
 * this tools build need libmemcached
-* compile ==> first:ldconfig  second:gcc memcount.c -o memcount -lpthread -pmemcached
+* compile ==> first:ldconfig  second:gcc memcount.c -o memcount -lpthread -lmemcached
