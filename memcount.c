@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <libmemcached/memcached.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define MEMCOUNT_KEY_NUM 3
 const size_t key_length[]= {2, 3, 3};
@@ -8,9 +12,13 @@ const char *keys[] = {"dd", "dd1", "dd2"};
 const char *servers_addr[] = {"--SERVER=10.77.96.122:35920","--SERVER=10.77.96.122:35921","--SERVER=10.77.96.122:35922","--SERVER=10.77.96.122:35923", NULL};
 const char *prefix = "_total";
 const char ** init_prefix_keys();
-void display(memcached_st ** servers, int count,const char **keys_result);
+int daemon_mode = 0;
 
-int main()
+void display(memcached_st ** servers, int count,const char **keys_result);
+int use_daemon();
+int get_options(int argc, char *const *argv);
+
+int main(int argc, char *const *argv)
 {
     int *sum = (int *)malloc(sizeof(int) * MEMCOUNT_KEY_NUM);
     memset(sum, 0, sizeof(int) * MEMCOUNT_KEY_NUM);
@@ -25,6 +33,12 @@ int main()
     int i = 0;
     const char **keys_result = init_prefix_keys();
     char value_result[20] = "";
+    
+    get_options(argc, argv);
+
+    if(daemon_mode){
+        use_daemon();
+    }
 
     for(; *pserver_addr != NULL; pserver_addr ++){
         servers[i] =  memcached(*pserver_addr, strlen(*pserver_addr));
@@ -67,8 +81,10 @@ int main()
                 memset(value_result, 0, sizeof value_result);   
             }
         }
-        
-        display(servers, count, keys_result);
+
+        if(!daemon_mode){        
+            display(servers, count, keys_result);
+        }
         usleep(100 * 1000);
     }
     return 0;
@@ -124,3 +140,77 @@ void display(memcached_st ** servers, int count, const char **keys_result)
         }
     }
 }
+
+int get_options(int argc, char *const *argv)
+{
+    char *p;
+    int   i;
+
+    for (i = 1; i < argc; i++) { 
+        p = (u_char *) argv[i];
+        if (*p++ != '-') {
+            printf("invalid option: \"%s\"\n", argv[i]);
+            return -1;
+        }
+
+        while (*p) {
+            switch (*p++) {
+                case 'd':
+                    daemon_mode = 1;
+                    break;
+                default:
+                    printf("invalid option: \"%c\"\n", *(p - 1));
+                    return -1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int use_daemon()
+{
+    int  fd;
+    switch (fork()) {
+        case -1:
+            printf("fork() failed!\n");
+            return -1;
+        case 0:
+            break;
+        default:
+            exit(0);
+    }
+
+    if (setsid() == -1) {
+        printf("setsid() failed\n");
+        return -1;
+    }
+
+    umask(0);
+
+    fd = open("/dev/null", O_RDWR);
+    if (fd == -1) {
+        printf("open(\"/dev/null\") failed\n");
+        return -1;
+    }
+
+    if (dup2(fd, STDIN_FILENO) == -1) {
+        printf("dup2(STDIN) failed\n");
+        return -1;
+    }
+
+    if (dup2(fd, STDOUT_FILENO) == -1) {
+        printf("dup2(STDOUT) failed\n");
+        return -1;
+    }
+
+    if (fd > STDERR_FILENO) {
+        if (close(fd) == -1) {
+            printf("close() failed\n");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
